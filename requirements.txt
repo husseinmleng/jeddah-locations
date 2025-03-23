@@ -3,3 +3,4 @@ numpy
 folium
 streamlit
 streamlit_folium
+matplotlib
