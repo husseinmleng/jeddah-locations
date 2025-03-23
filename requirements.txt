@@ -2,3 +2,4 @@ pandas
 numpy
 folium
 streamlit
+streamlit_folium
