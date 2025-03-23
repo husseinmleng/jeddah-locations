@@ -4,7 +4,7 @@ from folium.features import DivIcon
 from itertools import combinations
 from geo_utils import calculate_distance, calculate_optimal_location
 
-def create_map(df, education_offices=None, selected_schools=None, show_optimal_offices=True,
+def create_map(df, education_offices=None, selected_schools=None, show_optimal_offices=True, 
                color_by='office', distance_method='manhattan'):
     """
     Create a Folium map with schools and optimal office locations
@@ -36,11 +36,30 @@ def create_map(df, education_offices=None, selected_schools=None, show_optimal_o
     # Create the map
     m = folium.Map(location=[center_lat, center_lng], zoom_start=10, control_scale=True)
 
-    # Add tile layers
-    folium.TileLayer('cartodbpositron', name='Light Map').add_to(m)
-    folium.TileLayer('cartodbdark_matter', name='Dark Map').add_to(m)
-    folium.TileLayer('OpenStreetMap', name='Street Map').add_to(m)
-    folium.TileLayer('Stamen Terrain', name='Terrain Map').add_to(m)
+    # Add tile layers with proper attribution
+    folium.TileLayer(
+        'cartodbpositron', 
+        name='Light Map',
+        attr='&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="http://cartodb.com/attributions">CartoDB</a>'
+    ).add_to(m)
+    
+    folium.TileLayer(
+        'cartodbdark_matter', 
+        name='Dark Map',
+        attr='&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="http://cartodb.com/attributions">CartoDB</a>'
+    ).add_to(m)
+    
+    folium.TileLayer(
+        'OpenStreetMap', 
+        name='Street Map',
+        attr='&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    ).add_to(m)
+    
+    folium.TileLayer(
+        'Stamen Terrain', 
+        name='Terrain Map',
+        attr='Map tiles by <a href="http://stamen.com">Stamen Design</a>, under <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a>. Data by <a href="http://openstreetmap.org">OpenStreetMap</a>, under <a href="http://www.openstreetmap.org/copyright">ODbL</a>.'
+    ).add_to(m)
 
     # Add measurement control
     measure_control = MeasureControl(
@@ -69,6 +88,8 @@ def create_map(df, education_offices=None, selected_schools=None, show_optimal_o
     )
     m.add_child(draw)
 
+    # Rest of the create_map function remains unchanged...
+    
     # Create feature groups
     all_schools = folium.FeatureGroup(name="All Schools").add_to(m)
     all_schools_cluster = MarkerCluster(name="Clustered Schools").add_to(all_schools)
@@ -98,7 +119,7 @@ def create_map(df, education_offices=None, selected_schools=None, show_optimal_o
         # Create popup and marker
         popup_html = _create_popup_html(row, idx)
         color = _get_marker_color(row, color_by, office, office_colors, level_colors, gender_colors, type_colors)
-
+        
         # Check if this school is among the selected schools
         is_selected = selected_schools is not None and idx in selected_schools
 
