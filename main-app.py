@@ -43,17 +43,16 @@ def run_analysis(df):
         help="Manhattan: city block distance. Haversine: 'as the crow flies' distance."
     )
 
-    # Filter by office, getting the filtered dataframe
-    selected_offices, filtered_df = setup_sidebar_filters(df)
-    color_by = setup_color_options()
+    # The new filter function returns the final, doubly-filtered dataframe
+    filtered_df = setup_sidebar_filters(df)
     
+    color_by = setup_color_options()
     show_coverage = st.sidebar.checkbox("Show Neighborhood Coverage", value=True)
     
-    # Pass the office-filtered df to the school selector
+    # Pass the final filtered df to the school selector
     selected_schools = select_individual_schools(filtered_df)
 
-    # Create map using the office-filtered data
-    # The map will internally group this data by neighborhood
+    # Create map using the final filtered data
     m, _ = create_map(
         df=filtered_df,
         selected_schools=selected_schools,
@@ -66,40 +65,57 @@ def run_analysis(df):
 
     with tab1:
         display_map_tab(m)
-
     with tab2:
-        # Pass the office-filtered df to the analysis tab
         display_analysis_tab(filtered_df, selected_schools, distance_method)
-
     with tab3:
-        # Pass the office-filtered df to the data tab
         display_data_tab(filtered_df)
 
 def setup_sidebar_filters(df):
-    """Setup sidebar filters for Education Offices"""
+    """
+    Setup cascading sidebar filters for Offices and then Neighborhoods.
+    Returns the final, filtered DataFrame.
+    """
     st.sidebar.header("Data Overview")
     st.sidebar.write(f"Total schools: {len(df)}")
+    st.sidebar.header("Filter Options")
 
+    # --- Filter Level 1: Education Office ---
     selected_offices = []
     if 'standardized_office' in df.columns:
-        offices = df['standardized_office'].unique()
-        st.sidebar.write(f"Education Offices: {len(offices)}")
-        st.sidebar.header("Filter Options")
+        offices = sorted(df['standardized_office'].unique())
         selected_offices = st.sidebar.multiselect(
-            "Select Education Offices",
-            options=sorted(offices),
-            default=None
+            "Step 1: Select Education Offices",
+            options=offices
         )
     else:
-        st.sidebar.warning("Education Office ('مكتب التعليم') column not found in data")
+        st.sidebar.warning("Education Office ('مكتب التعليم') column not found.")
+        return df # Return original df if no office column
 
-    # Filter the dataframe by the selected offices
-    if selected_offices and len(selected_offices) > 0:
-        filtered_df = df[df['standardized_office'].isin(selected_offices)]
+    # --- Filter Level 2: Neighborhood (dependent on Office) ---
+    if selected_offices:
+        # Create a dataframe filtered ONLY by the selected offices
+        office_filtered_df = df[df['standardized_office'].isin(selected_offices)]
+        
+        # Find which neighborhoods are available within that office selection
+        available_neighborhoods = sorted(office_filtered_df['الحي'].unique())
+        
+        selected_neighborhoods = st.sidebar.multiselect(
+            "Step 2: Select Neighborhoods",
+            options=available_neighborhoods
+        )
+
+        # Determine the final dataframe to return
+        if selected_neighborhoods:
+            # If user has selected specific neighborhoods, filter further
+            final_df = office_filtered_df[office_filtered_df['الحي'].isin(selected_neighborhoods)]
+        else:
+            # If user has selected offices but no neighborhoods, show all from the offices
+            final_df = office_filtered_df
     else:
-        filtered_df = df
+        # If no offices are selected, show everything
+        final_df = df
 
-    return selected_offices, filtered_df
+    return final_df
 
 def setup_color_options():
     """Setup color options for markers"""
@@ -108,13 +124,14 @@ def setup_color_options():
         "Color markers by",
         options=list(color_options.keys()),
         format_func=lambda x: color_options[x],
-        index=0
+        index=0 # Default to 'neighborhood'
     )
 
 def select_individual_schools(filtered_df):
     """Select individual schools for analysis"""
     st.sidebar.header("Select Schools for Distance Analysis")
     if 'اسم المدرسة' in filtered_df.columns:
+        # Ensure the options are from the filtered_df to prevent errors
         school_options = {idx: name for idx, name in zip(filtered_df.index, filtered_df['اسم المدرسة'])}
     else:
         school_options = {idx: f"School #{idx}" for idx in filtered_df.index}
@@ -122,7 +139,7 @@ def select_individual_schools(filtered_df):
     return st.sidebar.multiselect(
         "Select schools for distance analysis",
         options=list(school_options.keys()),
-        format_func=lambda x: school_options[x]
+        format_func=lambda x: school_options.get(x, x) # Use .get for safety
     )
 
 def display_map_tab(m):

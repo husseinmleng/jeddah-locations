@@ -39,9 +39,11 @@ def display_welcome_message():
     
     ## How it Works:
     
-    1. **Filter by Education Office** in the sidebar to select which schools to display.
-    2. The map will then group the selected schools by their **Neighborhood ('الحي')**.
-    3. You can toggle the **Neighborhood Coverage** circles to see the geographic spread of schools within each neighborhood.
+    1. **Use the Cascading Filters** in the sidebar:
+        - First, select one or more **Education Offices**.
+        - Then, a list of **Neighborhoods** within those offices will appear, allowing you to refine your selection.
+    2. The map will group the filtered schools by their **Neighborhood ('الحي')**.
+    3. You can toggle **Neighborhood Coverage** circles and **Satellite View**.
     4. **Select individual schools** to calculate distances between them.
     
     ## Getting Started:
@@ -51,7 +53,6 @@ def display_welcome_message():
 
 def get_color_options():
     """Return color options for the markers"""
-    # Coloring is by neighborhood, even though filtering is by office
     return {
         'neighborhood': 'الحي',
         'level': 'School Level',
