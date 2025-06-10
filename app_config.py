@@ -35,27 +35,25 @@ def display_welcome_message():
     st.markdown("""
     # Welcome to the School Facilities Map Analyzer
     
-    This application helps you visualize and analyze school locations to:
+    This application helps you visualize and analyze school locations.
     
-    1. **Identify optimal locations** for education offices to serve schools
-    2. **Calculate distances** between schools and to proposed office locations
-    3. **Analyze school distribution** by education office, level, gender, and type
+    ## How it Works:
+    
+    1. **Filter by Education Office** in the sidebar to select which schools to display.
+    2. The map will then group the selected schools by their **Neighborhood ('الحي')**.
+    3. You can toggle the **Neighborhood Coverage** circles to see the geographic spread of schools within each neighborhood.
+    4. **Select individual schools** to calculate distances between them.
     
     ## Getting Started:
     
-    1. Upload a CSV file containing school data using the uploader in the sidebar
-    2. The file should include columns for:
-       - School names and details
-       - Education office names
-       - Latitude and longitude coordinates
-    
-    The app will automatically process the data and provide interactive visualizations and analysis tools.
+    1. Upload a CSV file that includes columns for `مكتب التعليم`, `الحي`, `latitude`, and `longitude`.
     """)
 
 def get_color_options():
     """Return color options for the markers"""
+    # Coloring is by neighborhood, even though filtering is by office
     return {
-        'office': 'Education Office',
+        'neighborhood': 'الحي',
         'level': 'School Level',
         'gender': 'Gender',
         'type': 'School Type'

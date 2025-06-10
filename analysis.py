@@ -46,35 +46,6 @@ def generate_distance_matrix(df, selected_schools=None, distance_method='manhatt
 
     return distance_df
 
-def calculate_schools_to_office_distances(df, office_locations):
-    """Calculate distances from each school to their optimal office location"""
-    if not office_locations or 'standardized_office' not in df.columns:
-        return df
-
-    # Create a copy of the dataframe
-    result_df = df.copy()
-
-    # Add column for distance to optimal office
-    result_df['Distance to Office (km)'] = None
-
-    # Get the distance method from the first office location
-    first_office = next(iter(office_locations.values()))
-    distance_method = first_office.get('distance_method', 'manhattan')
-
-    # Calculate distance for each school
-    for idx, row in result_df.iterrows():
-        office = row['standardized_office']
-        if office in office_locations:
-            office_loc = office_locations[office]
-            distance = calculate_distance(
-                row['latitude'], row['longitude'],
-                office_loc['latitude'], office_loc['longitude'],
-                method=distance_method
-            )
-            result_df.at[idx, 'Distance to Office (km)'] = round(distance, 2)
-
-    return result_df
-
 def extract_distance_statistics(distance_df):
     """Extract statistics from a distance matrix"""
     # Extract the upper triangle of the distance matrix (excluding diagonal)

@@ -1,4 +1,4 @@
-from math import sin, cos, sqrt, atan2, radians, cos, pi, fabs
+from math import sin, cos, sqrt, atan2, radians, pi, fabs
 
 def calculate_distance(lat1, lon1, lat2, lon2, method='haversine'):
     """
@@ -48,8 +48,6 @@ def calculate_manhattan_distance(lat1, lon1, lat2, lon2):
     lat_distance = fabs(lat1 - lat2) * 111.0
 
     # Convert longitude difference to kilometers (varies with latitude)
-    # At the equator, 1 degree of longitude is about 111 km
-    # This decreases as you move toward the poles by a factor of cos(latitude)
     avg_lat = radians((lat1 + lat2) / 2)  # Use average latitude for calculation
     lon_distance = fabs(lon1 - lon2) * 111.0 * cos(avg_lat)
 
@@ -58,73 +56,33 @@ def calculate_manhattan_distance(lat1, lon1, lat2, lon2):
 
 def calculate_optimal_location(df, distance_method='manhattan'):
     """
-    Calculate the optimal location using specified distance method
+    Calculate the optimal location and distance statistics for a group of schools.
 
-    For Manhattan distance, we use the median center instead of mean center
-    as it minimizes the sum of Manhattan distances
+    For Manhattan distance, we use the median center.
+    For Haversine distance, we use the mean center.
     """
+    if df.empty:
+        return None
+        
     if distance_method == 'manhattan':
-        # For Manhattan distance, median center is optimal
         center_lat = df['latitude'].median()
         center_lng = df['longitude'].median()
     else:
-        # For Haversine distance, use mean center
         center_lat = df['latitude'].mean()
         center_lng = df['longitude'].mean()
 
-    # Find closest and farthest schools
-    min_distance = float('inf')
     max_distance = 0
-    closest_school = None
-    farthest_school = None
-    closest_school_idx = None
-    closest_school_coords = None
-    farthest_school_idx = None
-    farthest_school_coords = None
-
     for idx, row in df.iterrows():
         dist = calculate_distance(
             center_lat, center_lng,
             row['latitude'], row['longitude'],
             method=distance_method
         )
-
-        if dist < min_distance:
-            min_distance = dist
-            closest_school = row.get('اسم المدرسة', f"School #{idx}")
-            closest_school_idx = idx
-            closest_school_coords = (row['latitude'], row['longitude'])
-
         if dist > max_distance:
             max_distance = dist
-            farthest_school = row.get('اسم المدرسة', f"School #{idx}")
-            farthest_school_idx = idx
-            farthest_school_coords = (row['latitude'], row['longitude'])
-
-    # Calculate statistics for all schools
-    total_distance = 0
-    for _, row in df.iterrows():
-        dist = calculate_distance(
-            center_lat, center_lng,
-            row['latitude'], row['longitude'],
-            method=distance_method
-        )
-        total_distance += dist
-
-    average_distance = total_distance / len(df) if len(df) > 0 else 0
 
     return {
         'center_lat': center_lat,
         'center_lng': center_lng,
-        'total_distance': total_distance,
-        'average_distance': average_distance,
-        'min_distance': min_distance,
         'max_distance': max_distance,
-        'closest_school': closest_school,
-        'closest_school_idx': closest_school_idx,
-        'closest_school_coords': closest_school_coords,
-        'farthest_school': farthest_school,
-        'farthest_school_idx': farthest_school_idx,
-        'farthest_school_coords': farthest_school_coords,
-        'distance_method': distance_method
     }

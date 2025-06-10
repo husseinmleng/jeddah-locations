@@ -48,16 +48,9 @@ def load_and_process_data(file):
 
         # Clean coordinate data
         for col, new_name in [(lat_col, 'latitude'), (lng_col, 'longitude')]:
-            # Convert to string first to handle any unexpected formats
             df[new_name] = df[col].astype(str)
-
-            # Clean any quotes or extra characters
             df[new_name] = df[new_name].str.replace('"', '').str.strip()
-
-            # Handle comma as decimal separator if needed
             df[new_name] = df[new_name].str.replace(',', '.')
-
-            # Convert to float, coercing errors to NaN
             df[new_name] = pd.to_numeric(df[new_name], errors='coerce')
 
         # Drop rows with missing coordinates
@@ -66,9 +59,13 @@ def load_and_process_data(file):
         # Filter out any invalid coordinates (too extreme or zero)
         df_clean = df_clean[(df_clean['latitude'] != 0) & (df_clean['longitude'] != 0)]
 
-        # Standardize education office names
+        # Standardize education office names for filtering
         if 'مكتب التعليم' in df_clean.columns:
             df_clean['standardized_office'] = df_clean['مكتب التعليم'].apply(standardize_office_name)
+        
+        # Ensure the 'الحي' column is clean for map grouping
+        if 'الحي' in df_clean.columns:
+            df_clean['الحي'] = df_clean['الحي'].fillna('Unknown').astype(str)
 
         return df_clean
 
