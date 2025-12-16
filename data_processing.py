@@ -25,9 +25,17 @@ def standardize_office_name(name):
     return name
 
 def load_and_process_data(file):
-    """Load and process CSV data"""
+    """Load and process CSV or Excel data"""
     try:
-        df = pd.read_csv(file)
+        # Detect file type based on filename
+        file_name = file.name.lower()
+        if file_name.endswith('.csv'):
+            df = pd.read_csv(file)
+        elif file_name.endswith(('.xls', '.xlsx')):
+            df = pd.read_excel(file)
+        else:
+            st.error("Unsupported file format. Please upload a CSV or Excel file.")
+            return None
 
         # Find coordinate columns
         lat_col = None
@@ -62,10 +70,17 @@ def load_and_process_data(file):
         # Standardize education office names for filtering
         if 'مكتب التعليم' in df_clean.columns:
             df_clean['standardized_office'] = df_clean['مكتب التعليم'].apply(standardize_office_name)
-        
-        # Ensure the 'الحي' column is clean for map grouping
+
+        # Handle neighborhood column - check for both 'الحي' and 'العنوان'
         if 'الحي' in df_clean.columns:
             df_clean['الحي'] = df_clean['الحي'].fillna('Unknown').astype(str)
+        elif 'العنوان' in df_clean.columns:
+            # Use address as neighborhood if الحي doesn't exist
+            df_clean['الحي'] = df_clean['العنوان'].fillna('Unknown').astype(str)
+
+        # Handle zone column if it exists
+        if 'الزون' in df_clean.columns:
+            df_clean['الزون'] = df_clean['الزون'].fillna('Unknown').astype(str)
 
         return df_clean
 

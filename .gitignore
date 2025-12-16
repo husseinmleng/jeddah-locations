@@ -1,4 +1,7 @@
 .idea
-__pycache__
 *.pyc
 *.pyo
+*.xlsx
+*.csv
+/__pycache__/
+__pycache__

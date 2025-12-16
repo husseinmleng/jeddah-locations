@@ -2,13 +2,21 @@ import folium
 from folium.plugins import MarkerCluster, MeasureControl, Draw
 from folium.features import DivIcon
 from itertools import combinations
-from geo_utils import calculate_distance, calculate_optimal_location
+from geo_utils import calculate_distance, calculate_optimal_location, calculate_robust_centroid
 
 def create_map(df, selected_schools=None,
-               color_by='neighborhood', distance_method='manhattan', show_coverage_areas=True):
+               color_by='neighborhood', distance_method='manhattan',
+               show_coverage_areas=True, show_centroid_distances=False):
     """
     Create a Folium map. The received DataFrame is pre-filtered by office.
     This function groups the data by neighborhood for visualization.
+
+    Parameters:
+    - show_centroid_distances: If True, show zone centroids and distances to all schools
+
+    Returns:
+    - m: Folium map object
+    - zone_centroids: Dictionary with zone centroid information
     """
     if df is None or df.empty:
         return None, None
@@ -55,9 +63,63 @@ def create_map(df, selected_schools=None,
     all_schools_cluster = MarkerCluster(name="Clustered Schools").add_to(m)
     selected_group_fg = folium.FeatureGroup(name="Selected Schools").add_to(m)
     distance_lines_fg = folium.FeatureGroup(name="Distance Lines").add_to(m)
-    
+
     if show_coverage_areas:
         coverage_areas_fg = folium.FeatureGroup(name="Neighborhood Coverage").add_to(m)
+
+    # Calculate zone centroids if zone column exists
+    zone_centroids = {}
+    if 'الزون' in df_filtered.columns:
+        centroids_fg = folium.FeatureGroup(name="Zone Centroids").add_to(m)
+        centroid_distances_fg = folium.FeatureGroup(name="Centroid Distances").add_to(m)
+
+        for zone in df_filtered['الزون'].unique():
+            zone_df = df_filtered[df_filtered['الزون'] == zone]
+            centroid_info = calculate_robust_centroid(zone_df, distance_method=distance_method)
+
+            if centroid_info:
+                zone_centroids[zone] = centroid_info
+
+                # Add centroid marker
+                zone_color = _get_zone_colors(df_filtered).get(zone, 'gray')
+                folium.Marker(
+                    location=[centroid_info['center_lat'], centroid_info['center_lng']],
+                    popup=f"<b>Zone {zone} Centroid</b><br>"
+                          f"Avg Distance: {centroid_info['avg_distance']:.2f} km<br>"
+                          f"Median Distance: {centroid_info['median_distance']:.2f} km<br>"
+                          f"Max Distance: {centroid_info['max_distance']:.2f} km<br>"
+                          f"Schools: {len(zone_df)}<br>"
+                          f"Outliers: {len(centroid_info['outlier_indices'])}",
+                    tooltip=f"Zone {zone} Centroid",
+                    icon=folium.Icon(color=zone_color, icon='star', prefix='fa')
+                ).add_to(centroids_fg)
+
+                # Add distance lines if requested
+                if show_centroid_distances:
+                    for idx, row in zone_df.iterrows():
+                        dist = calculate_distance(
+                            centroid_info['center_lat'], centroid_info['center_lng'],
+                            row['latitude'], row['longitude'],
+                            method=distance_method
+                        )
+
+                        # Use different line style for outliers
+                        is_outlier = idx in centroid_info['outlier_indices']
+                        line_color = 'red' if is_outlier else zone_color
+                        line_weight = 2 if is_outlier else 1
+                        line_opacity = 0.6 if is_outlier else 0.3
+
+                        folium.PolyLine(
+                            locations=[
+                                [centroid_info['center_lat'], centroid_info['center_lng']],
+                                [row['latitude'], row['longitude']]
+                            ],
+                            color=line_color,
+                            weight=line_weight,
+                            opacity=line_opacity,
+                            tooltip=f"{row.get('اسم المدرسة', 'School')}: {dist:.2f} km"
+                                    + (" (Outlier)" if is_outlier else "")
+                        ).add_to(centroid_distances_fg)
 
     # Dictionary to group schools by neighborhood
     neighborhood_schools = {}
@@ -70,6 +132,7 @@ def create_map(df, selected_schools=None,
 
     # Color dictionaries
     neighborhood_colors = _get_group_colors(df_filtered, 'الحي')
+    zone_colors = _get_zone_colors(df_filtered)
     level_colors = _get_level_colors()
     gender_colors = _get_gender_colors()
     type_colors = _get_type_colors()
@@ -77,8 +140,9 @@ def create_map(df, selected_schools=None,
     # Add markers for each school
     for idx, row in df_filtered.iterrows():
         neighborhood = row.get('الحي', 'Unknown')
+        zone = row.get('الزون', 'Unknown')
         popup_html = _create_popup_html(row, idx)
-        color = _get_marker_color(row, color_by, neighborhood, neighborhood_colors, level_colors, gender_colors, type_colors)
+        color = _get_marker_color(row, color_by, neighborhood, zone, neighborhood_colors, zone_colors, level_colors, gender_colors, type_colors)
         
         is_selected = selected_schools is not None and idx in selected_schools
         _add_school_marker(row, idx, popup_html, color, is_selected, selected_group_fg, all_schools_cluster)
@@ -103,7 +167,7 @@ def create_map(df, selected_schools=None,
         _add_distance_lines_between_schools(df_filtered, selected_schools, distance_lines_fg, distance_method)
 
     folium.LayerControl(collapsed=False).add_to(m)
-    return m, None
+    return m, zone_centroids
 
 def _get_group_colors(df, group_column):
     group_colors = {}
@@ -112,6 +176,24 @@ def _get_group_colors(df, group_column):
         for i, group in enumerate(df[group_column].unique()):
             group_colors[group] = colors[i % len(colors)]
     return group_colors
+
+def _get_zone_colors(df):
+    """Get colors for zones (G1-G5)"""
+    zone_colors = {
+        'G1': 'blue',
+        'G2': 'green',
+        'G3': 'red',
+        'G4': 'purple',
+        'G5': 'orange'
+    }
+    # If zone column exists, add any additional zones found
+    if 'الزون' in df.columns:
+        additional_colors = ['darkred', 'lightred', 'darkblue', 'darkgreen', 'cadetblue']
+        zones = df['الزون'].unique()
+        for i, zone in enumerate(zones):
+            if zone not in zone_colors:
+                zone_colors[zone] = additional_colors[i % len(additional_colors)]
+    return zone_colors
 
 def _get_level_colors():
     return {'رياض الأطفال': 'blue', 'المرحلة الإبتدائية': 'green', 'المرحلة المتوسطة': 'orange', 'المرحلة الثانوية': 'red', 'التعليم المستمر': 'purple', 'معهد': 'darkred', 'تربية خاصة': 'darkpurple'}
@@ -128,12 +210,16 @@ def _create_popup_html(row, idx):
             popup_html += f"{col}: {row[col]}<br>"
     return popup_html
 
-def _get_marker_color(row, color_by, neighborhood, neighborhood_colors, level_colors, gender_colors, type_colors):
-    if color_by == 'neighborhood': return neighborhood_colors.get(neighborhood, 'gray')
+def _get_marker_color(row, color_by, neighborhood, zone, neighborhood_colors, zone_colors, level_colors, gender_colors, type_colors):
+    if color_by == 'zone': return zone_colors.get(zone, 'gray')
+    elif color_by == 'neighborhood': return neighborhood_colors.get(neighborhood, 'gray')
     elif color_by == 'level' and 'المرحلة' in row: return level_colors.get(row['المرحلة'], 'blue')
-    elif color_by == 'gender' and 'الجنس' in row: return gender_colors.get(row['الجنس'], 'blue')
+    elif color_by == 'gender':
+        # Check both possible gender column names
+        gender_col = 'جنس المدرسة' if 'جنس المدرسة' in row else 'الجنس'
+        if gender_col in row: return gender_colors.get(row[gender_col], 'blue')
     elif color_by == 'type' and 'نوع التعليم' in row: return type_colors.get(row['نوع التعليم'], 'blue')
-    else: return 'blue'
+    return 'blue'
 
 def _add_school_marker(row, idx, popup_html, color, is_selected, selected_group, all_schools_cluster):
     icon = folium.Icon(color='green', icon='star', prefix='fa') if is_selected else folium.Icon(color=color)

@@ -4,7 +4,10 @@ from streamlit_folium import folium_static
 
 from data_processing import load_and_process_data
 from map_utils import create_map
-from analysis import generate_distance_matrix, extract_distance_statistics
+from analysis import (
+    generate_distance_matrix, extract_distance_statistics,
+    generate_centroid_distance_table, extract_centroid_statistics
+)
 from ui_utils import (
     get_csv_download_link, plot_distance_histogram, create_sample_data
 )
@@ -17,7 +20,7 @@ def main():
 
     st.title("School Facilities Map Analyzer")
 
-    uploaded_file = st.sidebar.file_uploader("Upload CSV file with school data", type=["csv"])
+    uploaded_file = st.sidebar.file_uploader("Upload CSV or Excel file with school data", type=["csv", "xls", "xlsx"])
 
     if uploaded_file is not None:
         with st.spinner("Processing data..."):
@@ -45,20 +48,34 @@ def run_analysis(df):
 
     # The new filter function returns the final, doubly-filtered dataframe
     filtered_df = setup_sidebar_filters(df)
-    
+
     color_by = setup_color_options()
-    show_coverage = st.sidebar.checkbox("Show Neighborhood Coverage", value=True)
-    
+    show_coverage = st.sidebar.checkbox(
+        "Show Neighborhood Coverage Areas",
+        value=False,
+        help="Display coverage circles around neighborhoods (can be visually busy)"
+    )
+
+    # Add checkbox for zone centroid distances (only if zone column exists)
+    show_centroid_distances = False
+    if 'الزون' in filtered_df.columns:
+        show_centroid_distances = st.sidebar.checkbox(
+            "Show Zone Centroid Distances",
+            value=False,
+            help="Display distance lines from all schools to their zone centroids"
+        )
+
     # Pass the final filtered df to the school selector
     selected_schools = select_individual_schools(filtered_df)
 
     # Create map using the final filtered data
-    m, _ = create_map(
+    m, zone_centroids = create_map(
         df=filtered_df,
         selected_schools=selected_schools,
         color_by=color_by,
         distance_method=distance_method,
-        show_coverage_areas=show_coverage
+        show_coverage_areas=show_coverage,
+        show_centroid_distances=show_centroid_distances
     )
 
     tab1, tab2, tab3 = st.tabs(["Map", "Analysis", "Data"])
@@ -66,53 +83,86 @@ def run_analysis(df):
     with tab1:
         display_map_tab(m)
     with tab2:
-        display_analysis_tab(filtered_df, selected_schools, distance_method)
+        display_analysis_tab(filtered_df, selected_schools, distance_method, zone_centroids)
     with tab3:
         display_data_tab(filtered_df)
 
 def setup_sidebar_filters(df):
     """
-    Setup cascading sidebar filters for Offices and then Neighborhoods.
+    Setup cascading sidebar filters.
+    If 'الزون' exists: Zone -> Neighborhood
+    Otherwise: Education Office -> Neighborhood
     Returns the final, filtered DataFrame.
     """
     st.sidebar.header("Data Overview")
     st.sidebar.write(f"Total schools: {len(df)}")
     st.sidebar.header("Filter Options")
 
-    # --- Filter Level 1: Education Office ---
-    selected_offices = []
-    if 'standardized_office' in df.columns:
+    # Check which filtering mode to use
+    has_zones = 'الزون' in df.columns
+    has_offices = 'standardized_office' in df.columns
+
+    if has_zones:
+        # --- Zone-based filtering ---
+        zones = sorted(df['الزون'].unique())
+        selected_zones = st.sidebar.multiselect(
+            "Step 1: Select Zones",
+            options=zones,
+            help="Select one or more zones (G1, G2, G3, G4, G5)"
+        )
+
+        if selected_zones:
+            # Filter by selected zones
+            zone_filtered_df = df[df['الزون'].isin(selected_zones)]
+
+            # Get neighborhoods available in selected zones
+            if 'الحي' in zone_filtered_df.columns:
+                available_neighborhoods = sorted(zone_filtered_df['الحي'].unique())
+
+                selected_neighborhoods = st.sidebar.multiselect(
+                    "Step 2: Select Neighborhoods",
+                    options=available_neighborhoods,
+                    help="Select neighborhoods within the selected zones"
+                )
+
+                if selected_neighborhoods:
+                    final_df = zone_filtered_df[zone_filtered_df['الحي'].isin(selected_neighborhoods)]
+                else:
+                    final_df = zone_filtered_df
+            else:
+                final_df = zone_filtered_df
+        else:
+            final_df = df
+
+    elif has_offices:
+        # --- Office-based filtering (original logic) ---
         offices = sorted(df['standardized_office'].unique())
         selected_offices = st.sidebar.multiselect(
             "Step 1: Select Education Offices",
             options=offices
         )
-    else:
-        st.sidebar.warning("Education Office ('مكتب التعليم') column not found.")
-        return df # Return original df if no office column
 
-    # --- Filter Level 2: Neighborhood (dependent on Office) ---
-    if selected_offices:
-        # Create a dataframe filtered ONLY by the selected offices
-        office_filtered_df = df[df['standardized_office'].isin(selected_offices)]
-        
-        # Find which neighborhoods are available within that office selection
-        available_neighborhoods = sorted(office_filtered_df['الحي'].unique())
-        
-        selected_neighborhoods = st.sidebar.multiselect(
-            "Step 2: Select Neighborhoods",
-            options=available_neighborhoods
-        )
+        if selected_offices:
+            office_filtered_df = df[df['standardized_office'].isin(selected_offices)]
 
-        # Determine the final dataframe to return
-        if selected_neighborhoods:
-            # If user has selected specific neighborhoods, filter further
-            final_df = office_filtered_df[office_filtered_df['الحي'].isin(selected_neighborhoods)]
+            if 'الحي' in office_filtered_df.columns:
+                available_neighborhoods = sorted(office_filtered_df['الحي'].unique())
+
+                selected_neighborhoods = st.sidebar.multiselect(
+                    "Step 2: Select Neighborhoods",
+                    options=available_neighborhoods
+                )
+
+                if selected_neighborhoods:
+                    final_df = office_filtered_df[office_filtered_df['الحي'].isin(selected_neighborhoods)]
+                else:
+                    final_df = office_filtered_df
+            else:
+                final_df = office_filtered_df
         else:
-            # If user has selected offices but no neighborhoods, show all from the offices
-            final_df = office_filtered_df
+            final_df = df
     else:
-        # If no offices are selected, show everything
+        st.sidebar.warning("No filtering columns found (Zone or Education Office).")
         final_df = df
 
     return final_df
@@ -156,16 +206,58 @@ def display_map_tab(m):
     else:
         st.warning("No map to display. Please check your data and selections.")
 
-def display_analysis_tab(filtered_df, selected_schools, distance_method):
+def display_analysis_tab(filtered_df, selected_schools, distance_method, zone_centroids):
     st.header("Analysis Results")
     method_name = "Manhattan" if distance_method == "manhattan" else "Haversine"
     st.info(f"Using {method_name} distance for calculations.")
 
+    # Display Zone Centroid Analysis if available
+    if zone_centroids and 'الزون' in filtered_df.columns:
+        st.subheader("Zone Centroid Analysis")
+
+        # Display statistics per zone
+        centroid_stats = extract_centroid_statistics(zone_centroids)
+        if centroid_stats:
+            st.write("**Summary Statistics by Zone:**")
+
+            # Create a summary table
+            summary_data = []
+            for zone in sorted(centroid_stats.keys()):
+                stats = centroid_stats[zone]
+                summary_data.append({
+                    'Zone': zone,
+                    'Total Schools': stats['total_schools'],
+                    'Outliers': stats['outliers'],
+                    'Avg Distance (km)': f"{stats['avg_distance']:.2f}",
+                    'Median Distance (km)': f"{stats['median_distance']:.2f}",
+                    'Max Distance (km)': f"{stats['max_distance']:.2f}"
+                })
+
+            summary_df = pd.DataFrame(summary_data)
+            st.dataframe(summary_df, use_container_width=True)
+
+        # Display detailed distance table
+        st.write("**Distance from Each School to Zone Centroid:**")
+        centroid_distance_df = generate_centroid_distance_table(filtered_df, zone_centroids, distance_method)
+        if centroid_distance_df is not None:
+            st.dataframe(centroid_distance_df, use_container_width=True)
+            st.markdown(
+                get_csv_download_link(
+                    centroid_distance_df,
+                    "centroid_distances.csv",
+                    "Download Centroid Distance Table"
+                ),
+                unsafe_allow_html=True
+            )
+
+        st.markdown("---")
+
+    # Display school-to-school distance analysis
+    st.subheader("Distance Matrix Between Selected Schools")
     if not selected_schools or len(selected_schools) < 2:
         st.warning("Please select 2 or more schools from the sidebar to perform a distance analysis.")
         return
 
-    st.subheader("Distance Matrix Between Selected Schools")
     distance_df = generate_distance_matrix(filtered_df, selected_schools, distance_method)
     if distance_df is not None:
         formatted_df = distance_df.applymap(lambda x: f"{x:.2f}" if x > 0 else "-")

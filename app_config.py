@@ -34,27 +34,32 @@ def display_welcome_message():
     """Display welcome message when no file is uploaded"""
     st.markdown("""
     # Welcome to the School Facilities Map Analyzer
-    
+
     This application helps you visualize and analyze school locations.
-    
+
     ## How it Works:
-    
+
     1. **Use the Cascading Filters** in the sidebar:
-        - First, select one or more **Education Offices**.
-        - Then, a list of **Neighborhoods** within those offices will appear, allowing you to refine your selection.
-    2. The map will group the filtered schools by their **Neighborhood ('الحي')**.
-    3. You can toggle **Neighborhood Coverage** circles and **Satellite View**.
+        - **Zone-based files**: First, select one or more **Zones (الزون)**, then filter by **Neighborhoods** within those zones.
+        - **Office-based files**: First, select one or more **Education Offices**, then filter by **Neighborhoods**.
+    2. The map will display schools with customizable markers (color by Zone, Neighborhood, Level, Gender, or Type).
+    3. You can toggle **Neighborhood Coverage** circles and switch between different map views (Satellite, Light, Dark).
     4. **Select individual schools** to calculate distances between them.
-    
+
     ## Getting Started:
-    
-    1. Upload a CSV file that includes columns for `مكتب التعليم`, `الحي`, `latitude`, and `longitude`.
+
+    1. Upload a CSV or Excel file (.csv, .xls, .xlsx) with your school data.
+    2. The file should include:
+       - Coordinate columns: `خط العرض` (latitude), `خط الطول` (longitude)
+       - For zone-based filtering: `الزون` and `العنوان` (neighborhood/address)
+       - For office-based filtering: `مكتب التعليم` and `الحي` (neighborhood)
     """)
 
 def get_color_options():
     """Return color options for the markers"""
     return {
-        'neighborhood': 'الحي',
+        'zone': 'الزون (Zone)',
+        'neighborhood': 'الحي (Neighborhood)',
         'level': 'School Level',
         'gender': 'Gender',
         'type': 'School Type'
