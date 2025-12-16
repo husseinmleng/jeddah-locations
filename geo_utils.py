@@ -87,19 +87,20 @@ def calculate_optimal_location(df, distance_method='manhattan'):
         'max_distance': max_distance,
     }
 
-def calculate_robust_centroid(df, distance_method='manhattan', outlier_percentile=95):
+def calculate_robust_centroid(df, distance_method='manhattan', outlier_percentile=95, exclude_outliers=True):
     """
     Calculate a robust centroid for a group of schools, handling outliers.
 
     This function:
     1. Calculates an initial centroid using median (robust to outliers)
     2. Identifies outliers based on distance from initial centroid
-    3. Recalculates centroid excluding outliers
+    3. Optionally recalculates centroid excluding outliers
 
     Parameters:
     - df: DataFrame with latitude and longitude columns
     - distance_method: 'manhattan' or 'haversine'
     - outlier_percentile: Schools beyond this percentile distance are considered outliers
+    - exclude_outliers: If True, recalculate centroid without outliers. If False, use all schools.
 
     Returns:
     - Dictionary with centroid location, statistics, and outlier info
@@ -130,17 +131,20 @@ def calculate_robust_centroid(df, distance_method='manhattan', outlier_percentil
     inlier_indices = [idx for idx, dist in distances if dist <= outlier_threshold]
     outlier_indices = [idx for idx, dist in distances if dist > outlier_threshold]
 
-    # Recalculate centroid using only inliers if we have enough
-    if len(inlier_indices) > 0:
+    # Recalculate centroid based on exclude_outliers setting
+    if exclude_outliers and len(inlier_indices) > 0:
+        # Use only inliers for centroid calculation
         inlier_df = df.loc[inlier_indices]
         center_lat = inlier_df['latitude'].median()
         center_lng = inlier_df['longitude'].median()
     else:
-        # If all are outliers, use initial centroid
+        # Use all schools (including outliers) for centroid
         center_lat = initial_lat
         center_lng = initial_lng
-        inlier_indices = list(df.index)
-        outlier_indices = []
+        if not exclude_outliers:
+            # If we're including outliers, mark them all as inliers
+            inlier_indices = list(df.index)
+            outlier_indices = []
 
     # Calculate statistics
     all_distances = []
@@ -164,5 +168,6 @@ def calculate_robust_centroid(df, distance_method='manhattan', outlier_percentil
         'outlier_threshold': outlier_threshold,
         'outlier_indices': outlier_indices,
         'inlier_indices': inlier_indices,
-        'distances': all_distances
+        'distances': all_distances,
+        'exclude_outliers': exclude_outliers
     }

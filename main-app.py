@@ -46,6 +46,30 @@ def run_analysis(df):
         help="Manhattan: city block distance. Haversine: 'as the crow flies' distance."
     )
 
+    # Add checkbox for outlier exclusion (only if zone column exists)
+    exclude_outliers = True
+    if 'الزون' in df.columns:
+        exclude_outliers = st.sidebar.checkbox(
+            "Exclude Outliers from Centroid Calculation",
+            value=True,
+            help="When checked, centroids are calculated excluding schools beyond the 95th percentile distance. When unchecked, all schools are included."
+        )
+
+    # Calculate FIXED zone centroids from the full dataset (before filtering)
+    # These centroids will not change when filters are applied
+    fixed_zone_centroids = {}
+    if 'الزون' in df.columns:
+        from geo_utils import calculate_robust_centroid
+        for zone in df['الزون'].unique():
+            zone_df = df[df['الزون'] == zone]
+            centroid_info = calculate_robust_centroid(
+                zone_df,
+                distance_method=distance_method,
+                exclude_outliers=exclude_outliers
+            )
+            if centroid_info:
+                fixed_zone_centroids[zone] = centroid_info
+
     # The new filter function returns the final, doubly-filtered dataframe
     filtered_df = setup_sidebar_filters(df)
 
@@ -69,13 +93,15 @@ def run_analysis(df):
     selected_schools = select_individual_schools(filtered_df)
 
     # Create map using the final filtered data
+    # Pass the FIXED zone centroids so they don't recalculate when filtering
     m, zone_centroids = create_map(
         df=filtered_df,
         selected_schools=selected_schools,
         color_by=color_by,
         distance_method=distance_method,
         show_coverage_areas=show_coverage,
-        show_centroid_distances=show_centroid_distances
+        show_centroid_distances=show_centroid_distances,
+        fixed_zone_centroids=fixed_zone_centroids
     )
 
     tab1, tab2, tab3 = st.tabs(["Map", "Analysis", "Data"])

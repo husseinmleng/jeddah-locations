@@ -6,17 +6,19 @@ from geo_utils import calculate_distance, calculate_optimal_location, calculate_
 
 def create_map(df, selected_schools=None,
                color_by='neighborhood', distance_method='manhattan',
-               show_coverage_areas=True, show_centroid_distances=False):
+               show_coverage_areas=True, show_centroid_distances=False,
+               fixed_zone_centroids=None):
     """
     Create a Folium map. The received DataFrame is pre-filtered by office.
     This function groups the data by neighborhood for visualization.
 
     Parameters:
     - show_centroid_distances: If True, show zone centroids and distances to all schools
+    - fixed_zone_centroids: Pre-calculated zone centroids that don't change with filtering
 
     Returns:
     - m: Folium map object
-    - zone_centroids: Dictionary with zone centroid information
+    - zone_centroids: Dictionary with zone centroid information (returns the fixed ones)
     """
     if df is None or df.empty:
         return None, None
@@ -67,59 +69,69 @@ def create_map(df, selected_schools=None,
     if show_coverage_areas:
         coverage_areas_fg = folium.FeatureGroup(name="Neighborhood Coverage").add_to(m)
 
-    # Calculate zone centroids if zone column exists
-    zone_centroids = {}
-    if 'الزون' in df_filtered.columns:
+    # Use FIXED zone centroids (pre-calculated from full dataset)
+    # These centroids don't change when filters are applied
+    zone_centroids = fixed_zone_centroids if fixed_zone_centroids else {}
+
+    if zone_centroids and 'الزون' in df_filtered.columns:
         centroids_fg = folium.FeatureGroup(name="Zone Centroids").add_to(m)
         centroid_distances_fg = folium.FeatureGroup(name="Centroid Distances").add_to(m)
 
-        for zone in df_filtered['الزون'].unique():
+        # Only display centroids for zones that appear in the filtered data
+        zones_in_filtered = df_filtered['الزون'].unique()
+        for zone in zones_in_filtered:
+            if zone not in zone_centroids:
+                continue
+
+            centroid_info = zone_centroids[zone]
             zone_df = df_filtered[df_filtered['الزون'] == zone]
-            centroid_info = calculate_robust_centroid(zone_df, distance_method=distance_method)
 
-            if centroid_info:
-                zone_centroids[zone] = centroid_info
+            # Add centroid marker
+            zone_color = _get_zone_colors(df_filtered).get(zone, 'gray')
 
-                # Add centroid marker
-                zone_color = _get_zone_colors(df_filtered).get(zone, 'gray')
-                folium.Marker(
-                    location=[centroid_info['center_lat'], centroid_info['center_lng']],
-                    popup=f"<b>Zone {zone} Centroid</b><br>"
-                          f"Avg Distance: {centroid_info['avg_distance']:.2f} km<br>"
-                          f"Median Distance: {centroid_info['median_distance']:.2f} km<br>"
-                          f"Max Distance: {centroid_info['max_distance']:.2f} km<br>"
-                          f"Schools: {len(zone_df)}<br>"
-                          f"Outliers: {len(centroid_info['outlier_indices'])}",
-                    tooltip=f"Zone {zone} Centroid",
-                    icon=folium.Icon(color=zone_color, icon='star', prefix='fa')
-                ).add_to(centroids_fg)
+            # Determine centroid type for display
+            exclude_outliers = centroid_info.get('exclude_outliers', True)
+            centroid_type = "Excluding Outliers" if exclude_outliers else "Including All Schools"
 
-                # Add distance lines if requested
-                if show_centroid_distances:
-                    for idx, row in zone_df.iterrows():
-                        dist = calculate_distance(
-                            centroid_info['center_lat'], centroid_info['center_lng'],
-                            row['latitude'], row['longitude'],
-                            method=distance_method
-                        )
+            folium.Marker(
+                location=[centroid_info['center_lat'], centroid_info['center_lng']],
+                popup=f"<b>Zone {zone} Centroid (Fixed)</b><br>"
+                      f"Method: {centroid_type}<br>"
+                      f"Based on all {len(centroid_info['distances'])} schools in zone<br>"
+                      f"Avg Distance: {centroid_info['avg_distance']:.2f} km<br>"
+                      f"Median Distance: {centroid_info['median_distance']:.2f} km<br>"
+                      f"Max Distance: {centroid_info['max_distance']:.2f} km<br>"
+                      f"Outliers Detected: {len(centroid_info['outlier_indices'])}",
+                tooltip=f"Zone {zone} Centroid ({centroid_type})",
+                icon=folium.Icon(color=zone_color, icon='star', prefix='fa')
+            ).add_to(centroids_fg)
 
-                        # Use different line style for outliers
-                        is_outlier = idx in centroid_info['outlier_indices']
-                        line_color = 'red' if is_outlier else zone_color
-                        line_weight = 2 if is_outlier else 1
-                        line_opacity = 0.6 if is_outlier else 0.3
+            # Add distance lines if requested (only for schools in filtered view)
+            if show_centroid_distances:
+                for idx, row in zone_df.iterrows():
+                    dist = calculate_distance(
+                        centroid_info['center_lat'], centroid_info['center_lng'],
+                        row['latitude'], row['longitude'],
+                        method=distance_method
+                    )
 
-                        folium.PolyLine(
-                            locations=[
-                                [centroid_info['center_lat'], centroid_info['center_lng']],
-                                [row['latitude'], row['longitude']]
-                            ],
-                            color=line_color,
-                            weight=line_weight,
-                            opacity=line_opacity,
-                            tooltip=f"{row.get('اسم المدرسة', 'School')}: {dist:.2f} km"
-                                    + (" (Outlier)" if is_outlier else "")
-                        ).add_to(centroid_distances_fg)
+                    # Use different line style for outliers
+                    is_outlier = idx in centroid_info['outlier_indices']
+                    line_color = 'red' if is_outlier else zone_color
+                    line_weight = 2 if is_outlier else 1
+                    line_opacity = 0.6 if is_outlier else 0.3
+
+                    folium.PolyLine(
+                        locations=[
+                            [centroid_info['center_lat'], centroid_info['center_lng']],
+                            [row['latitude'], row['longitude']]
+                        ],
+                        color=line_color,
+                        weight=line_weight,
+                        opacity=line_opacity,
+                        tooltip=f"{row.get('اسم المدرسة', 'School')}: {dist:.2f} km"
+                                + (" (Outlier)" if is_outlier else "")
+                    ).add_to(centroid_distances_fg)
 
     # Dictionary to group schools by neighborhood
     neighborhood_schools = {}
